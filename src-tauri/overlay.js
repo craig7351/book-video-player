@@ -1,3 +1,49 @@
+// 修正舊版 hls.js 的「假 HE-AAC」：它在非 Firefox/Android 一律把 AAC-LC 宣告成 HE-AAC(SBR)，
+// WebView2 的 FFmpeg AAC 解碼器照 SBR 去解,聲音會像開了變聲器(iyf.tv 等)。
+// 假造的特徵:SBR 延伸取樣率 == 核心取樣率(真正的 HE-AAC 是 2 倍),只改這種,改回 LC。
+(function () {
+  if (window.__ytfAacFix || !window.SourceBuffer) return;
+  window.__ytfAacFix = true;
+  function fixInit(u8) {
+    // 找 esds 內的 DecoderSpecificInfo(tag 0x05, 長度 4) = AudioSpecificConfig
+    for (var i = 0; i + 8 < u8.length; i++) {
+      if (u8[i] !== 0x65 || u8[i + 1] !== 0x73 || u8[i + 2] !== 0x64 || u8[i + 3] !== 0x73) continue; // "esds"
+      for (var j = i + 4; j + 6 < u8.length && j < i + 64; j++) {
+        if (u8[j] !== 0x05 || u8[j + 1] !== 0x04) continue;
+        var b0 = u8[j + 2], b1 = u8[j + 3], b2 = u8[j + 4];
+        var obj = b0 >> 3, sf = ((b0 & 7) << 1) | (b1 >> 7), ch = (b1 >> 3) & 15;
+        var ext = ((b1 & 7) << 1) | (b2 >> 7);
+        if (obj !== 5 || ext !== sf) return null;
+        var out = new Uint8Array(u8); // 複製,不動原資料
+        out[j + 2] = (2 << 3) | (sf >> 1);
+        out[j + 3] = ((sf & 1) << 7) | (ch << 3);
+        out[j + 4] = 0;
+        out[j + 5] = 0;
+        return out;
+      }
+      return null;
+    }
+    return null;
+  }
+  var origAppend = SourceBuffer.prototype.appendBuffer;
+  SourceBuffer.prototype.appendBuffer = function (data) {
+    try {
+      var u8 = data instanceof ArrayBuffer ? new Uint8Array(data)
+        : new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+      // 只看初始化片段(含 moov),一般媒體片段直接放行
+      if (u8.length < 65536 && u8.length > 8 &&
+          String.fromCharCode(u8[4], u8[5], u8[6], u8[7]) !== "moof") {
+        var fixed = fixInit(u8);
+        if (fixed) {
+          window.__ytfAacFixed = (window.__ytfAacFixed || 0) + 1; // 除錯用:修正次數
+          return origAppend.call(this, fixed);
+        }
+      }
+    } catch (e) {}
+    return origAppend.apply(this, arguments);
+  };
+})();
+
 // 只在最上層 frame 注入,避免 YouTube 內嵌 iframe 也跑一份
 (function () {
   if (window.top !== window.self) return;
