@@ -26,8 +26,30 @@ fn toggle_boss<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
     }
 }
 
+// 書籤：存成 app 資料夾下的 bookmarks.json（跨站共用；localStorage 會被各網域隔開）
+fn bookmarks_path<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> Option<std::path::PathBuf> {
+    app.path().app_data_dir().ok().map(|d| d.join("bookmarks.json"))
+}
+
+#[tauri::command]
+fn load_bookmarks(app: tauri::AppHandle) -> String {
+    bookmarks_path(&app)
+        .and_then(|p| std::fs::read_to_string(p).ok())
+        .unwrap_or_else(|| "[]".into())
+}
+
+#[tauri::command]
+fn save_bookmarks(app: tauri::AppHandle, data: String) -> Result<(), String> {
+    let p = bookmarks_path(&app).ok_or("no app data dir")?;
+    if let Some(dir) = p.parent() {
+        std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+    }
+    std::fs::write(p, data).map_err(|e| e.to_string())
+}
+
 fn main() {
     tauri::Builder::default()
+        .invoke_handler(tauri::generate_handler![load_bookmarks, save_bookmarks])
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
                 .with_handler(|app, _shortcut, event| {
@@ -90,7 +112,10 @@ fn main() {
                     Some(Modifiers::CONTROL | Modifiers::SHIFT),
                     Code::KeyZ,
                 );
-                app.global_shortcut().register(boss)?;
+                // 已被佔用（例如另一個實例在跑）時不要讓整個程式閃退,只是沒有老闆鍵
+                if let Err(e) = app.global_shortcut().register(boss) {
+                    eprintln!("老闆鍵 Ctrl+Shift+Z 註冊失敗: {e}");
+                }
             }
 
             Ok(())

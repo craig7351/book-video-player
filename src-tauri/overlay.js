@@ -4,6 +4,22 @@
   if (window.__ytfInjected) return;
   window.__ytfInjected = true;
 
+  // 失焦不暫停：部分網站在視窗 blur / 頁面隱藏時會自動暫停影片（如 iyf.tv）。
+  // 浮動視窗點到別的程式就會失焦,所以在網站腳本之前攔掉這些事件、並假裝頁面一直可見。
+  if (/(^|\.)iyf\.tv$/.test(location.hostname)) {
+    ["blur", "visibilitychange", "webkitvisibilitychange"].forEach(function (type) {
+      window.addEventListener(type, function (e) {
+        // 只攔「整個視窗/頁面」層級的事件,輸入框等元素自己的 blur 照常
+        if (e.target === window || e.target === document) e.stopImmediatePropagation();
+      }, true);
+    });
+    try {
+      Object.defineProperty(Document.prototype, "hidden", { get: function () { return false; } });
+      Object.defineProperty(Document.prototype, "visibilityState", { get: function () { return "visible"; } });
+      Document.prototype.hasFocus = function () { return true; };
+    } catch (e) {}
+  }
+
   function win() {
     return window.__TAURI__.window.getCurrentWindow();
   }
@@ -59,7 +75,7 @@
       "html.ytf-shorts #shorts-player .html5-video-container{position:absolute !important;",
       "inset:0 !important;width:100% !important;height:100% !important;}",
       "html.ytf-cinema:not(.ytf-shorts) #movie_player video,html.ytf-shorts #shorts-player video,",
-      "html.ytf-cinema .bpx-player-container video{",
+      "html.ytf-cinema .bpx-player-container video,html.ytf-cinema .xgplayer video{",
       "position:absolute !important;left:0 !important;top:0 !important;",
       "width:100% !important;height:100% !important;object-fit:contain !important;}",
       // Shorts：隱藏右側按鈕/字幕覆蓋層
@@ -79,6 +95,23 @@
       // Bilibili 彈幕層 + 頂部發送列
       "html.ytf-cinema .bpx-player-sending-bar,html.ytf-cinema .bpx-player-top,",
       "html.ytf-cinema [class*=dm-wrap]{display:none !important;}",
+      // 西瓜播放器 xgplayer（iyf.tv 等）
+      "html.ytf-cinema .xgplayer{position:fixed !important;inset:0 !important;",
+      "width:100vw !important;height:100vh !important;z-index:2147483600 !important;",
+      "background:#000 !important;margin:0 !important;padding:0 !important;}",
+      "html.ytf-cinema .xgplayer-danmu,html.ytf-cinema .danmu_handler_box{display:none !important;}",
+      // 📑 書籤清單
+      "#ytf-bm{position:fixed;top:" + (BAR_H + 2) + "px;right:6px;z-index:2147483647;display:none;",
+      "width:260px;max-width:calc(100vw - 12px);max-height:calc(100vh - " + (BAR_H + 10) + "px);overflow-y:auto;",
+      "background:rgba(20,20,20,.97);border-radius:6px;box-shadow:0 4px 16px rgba(0,0,0,.5);",
+      "font:12px system-ui,sans-serif;color:#eee;padding:4px 0;}",
+      "#ytf-bm.show{display:block;}",
+      ".ytf-bm-item{display:flex;align-items:center;gap:4px;padding:4px 8px;cursor:pointer;}",
+      ".ytf-bm-item:hover{background:#333;}",
+      ".ytf-bm-t{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}",
+      ".ytf-bm-del{border:none;background:none;color:#888;cursor:pointer;font-size:12px;padding:0 2px;}",
+      ".ytf-bm-del:hover{color:#f55;}",
+      ".ytf-bm-empty{padding:8px;color:#888;text-align:center;}",
       "#ytf-handle{position:fixed;top:0;left:50%;transform:translateX(-50%);z-index:2147483647;",
       "width:90px;height:8px;border-radius:0 0 7px 7px;background:rgba(200,0,0,.85);cursor:grab;}",
       "#ytf-handle:hover{height:13px;background:rgba(225,0,0,1);}",
@@ -104,6 +137,7 @@
     function hide() {
       if (bar.classList.contains("pinned")) return;
       if (document.activeElement === url) return;
+      if (bmPanel.classList.contains("show")) return;
       bar.classList.remove("show");
     }
 
@@ -176,6 +210,7 @@
     var svcYT = navBtn("YT", "https://www.youtube.com", "#cc0000");
     var svcNF = navBtn("NF", "https://www.netflix.com", "#b1060f");
     var svcBI = navBtn("B", "https://www.bilibili.com", "#00a1d6");
+    var svcIY = navBtn("IY", "https://mview.iyf.tv", "#ff6a00");
 
     // 🎬 只看影片：CSS 劇場模式，隱藏頁面其餘部分、播放器填滿視窗（不換頁，無嵌入限制）
     var cinema = document.createElement("button");
@@ -184,7 +219,7 @@
     cinema.title = "只看影片（隱藏其餘介面，播放器填滿視窗）";
     function hasPlayer() {
       return !!document.querySelector(
-        "#movie_player, .html5-video-player, .bpx-player-container, video"
+        "#movie_player, .html5-video-player, .bpx-player-container, .xgplayer, video"
       );
     }
     function setCinema(on) {
@@ -212,6 +247,106 @@
       setCinema(on);
     });
 
+    // ⭐ 加入/移除書籤、📑 書籤清單（存在 Rust 端 bookmarks.json，各網站共用）
+    var bookmarks = [];
+    function invoke(cmd, args) {
+      return window.__TAURI__.core.invoke(cmd, args);
+    }
+    function loadBookmarks() {
+      if (!hasTauri()) return Promise.resolve();
+      return invoke("load_bookmarks").then(function (s) {
+        try { bookmarks = JSON.parse(s) || []; } catch (e) { bookmarks = []; }
+        syncStar();
+      }).catch(function () {});
+    }
+    function saveBookmarks() {
+      if (hasTauri()) invoke("save_bookmarks", { data: JSON.stringify(bookmarks) }).catch(function () {});
+      syncStar();
+    }
+    function bmIndex(u) {
+      for (var i = 0; i < bookmarks.length; i++) if (bookmarks[i].url === u) return i;
+      return -1;
+    }
+
+    var star = document.createElement("button");
+    star.className = "ytf-btn";
+    star.textContent = "⭐";
+    star.title = "加入 / 移除書籤";
+    function syncStar() {
+      star.classList.toggle("on", bmIndex(location.href) >= 0);
+    }
+    star.addEventListener("click", function () {
+      loadBookmarks().then(function () {
+        var i = bmIndex(location.href);
+        if (i >= 0) bookmarks.splice(i, 1);
+        else bookmarks.unshift({ title: document.title || location.href, url: location.href });
+        saveBookmarks();
+        if (bmPanel.classList.contains("show")) renderBm();
+      });
+    });
+
+    var bmPanel = document.createElement("div");
+    bmPanel.id = "ytf-bm";
+    function renderBm() {
+      bmPanel.textContent = "";
+      if (!bookmarks.length) {
+        var empty = document.createElement("div");
+        empty.className = "ytf-bm-empty";
+        empty.textContent = "尚無書籤，按 ⭐ 加入目前頁面";
+        bmPanel.appendChild(empty);
+        return;
+      }
+      bookmarks.forEach(function (b, i) {
+        var row = document.createElement("div");
+        row.className = "ytf-bm-item";
+        row.title = b.url;
+        var t = document.createElement("span");
+        t.className = "ytf-bm-t";
+        t.textContent = b.title;
+        var del = document.createElement("button");
+        del.className = "ytf-bm-del";
+        del.textContent = "✕";
+        del.title = "刪除書籤";
+        del.addEventListener("click", function (e) {
+          e.stopPropagation();
+          bookmarks.splice(i, 1);
+          saveBookmarks();
+          renderBm();
+        });
+        row.addEventListener("click", function () {
+          bmPanel.classList.remove("show");
+          location.assign(b.url);
+        });
+        row.appendChild(t);
+        row.appendChild(del);
+        bmPanel.appendChild(row);
+      });
+    }
+    var bmBtn = document.createElement("button");
+    bmBtn.className = "ytf-btn";
+    bmBtn.textContent = "📑";
+    bmBtn.title = "書籤清單";
+    bmBtn.addEventListener("click", function () {
+      if (bmPanel.classList.toggle("show")) {
+        show();
+        loadBookmarks().then(renderBm);
+      }
+    });
+    // 點面板外面就關閉
+    document.addEventListener("mousedown", function (e) {
+      if (!bmPanel.classList.contains("show")) return;
+      if (bmPanel.contains(e.target) || e.target === bmBtn) return;
+      bmPanel.classList.remove("show");
+      hideTimer = setTimeout(hide, 600);
+    }, true);
+    loadBookmarks();
+
+    var minBtn = document.createElement("button");
+    minBtn.className = "ytf-btn";
+    minBtn.textContent = "➖";
+    minBtn.title = "縮小到工作列";
+    minBtn.addEventListener("click", function () { if (hasTauri()) win().minimize(); });
+
     var close = document.createElement("button");
     close.className = "ytf-btn";
     close.textContent = "✕";
@@ -224,8 +359,12 @@
     bar.appendChild(svcYT);
     bar.appendChild(svcNF);
     bar.appendChild(svcBI);
+    bar.appendChild(svcIY);
     bar.appendChild(cinema);
+    bar.appendChild(star);
+    bar.appendChild(bmBtn);
     bar.appendChild(pin);
+    bar.appendChild(minBtn);
     bar.appendChild(close);
     bar.addEventListener("mouseenter", show);
     bar.addEventListener("mouseleave", function () {
@@ -270,7 +409,7 @@
     });
 
     // ---- 掛載 + keepalive：被 SPA 清掉就補回 ----
-    var nodes = [bar, handle, hot].concat(grips);
+    var nodes = [bar, bmPanel, handle, hot].concat(grips);
     function mount() {
       var html = document.documentElement;
       if (!html) return;
@@ -330,6 +469,7 @@
     // 同步網址顯示（SPA 導航時）
     setInterval(function () {
       if (document.activeElement !== url) url.value = location.href;
+      syncStar();
     }, 1500);
 
     // 啟動時自動秀出 4 秒
