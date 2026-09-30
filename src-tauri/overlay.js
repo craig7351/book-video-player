@@ -141,10 +141,14 @@
       // Bilibili 彈幕層 + 頂部發送列
       "html.ytf-cinema .bpx-player-sending-bar,html.ytf-cinema .bpx-player-top,",
       "html.ytf-cinema [class*=dm-wrap]{display:none !important;}",
-      // 西瓜播放器 xgplayer（iyf.tv 等）
-      "html.ytf-cinema .xgplayer{position:fixed !important;inset:0 !important;",
+      // 西瓜播放器 xgplayer（iyf.tv 等）；iyf 另有同 class 的廣告播放器 .ad-player 會蓋住正片
+      "html.ytf-cinema .xgplayer:not(.ad-player),html.ytf-cinema .ad-player.xgplayer-playing{",
+      "position:fixed !important;inset:0 !important;",
       "width:100vw !important;height:100vh !important;z-index:2147483600 !important;",
       "background:#000 !important;margin:0 !important;padding:0 !important;}",
+      // 廣告播放中放正片上層照常顯示；沒在播就隱藏
+      "html.ytf-cinema .ad-player.xgplayer-playing{z-index:2147483601 !important;}",
+      "html.ytf-cinema .ad-player:not(.xgplayer-playing){display:none !important;}",
       "html.ytf-cinema .xgplayer-danmu,html.ytf-cinema .danmu_handler_box{display:none !important;}",
       // 📑 書籤清單
       "#ytf-bm{position:fixed;top:" + (BAR_H + 2) + "px;right:6px;z-index:2147483647;display:none;",
