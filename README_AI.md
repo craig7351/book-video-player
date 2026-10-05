@@ -102,6 +102,7 @@ iyf.tv 監聽 `window blur` / `visibilitychange` 會暫停影片（浮動視窗�
 | Bilibili | `.bpx-player-container`（內層 `.bpx-player-video-wrap`） | `#biliMainHeader`/`.bili-header`、`.bpx-player-sending-bar`、`[class*=dm-wrap]`（彈幕） |
 | Netflix | （不適用，本來就全畫面） | — |
 | iyf.tv（xgplayer 西瓜播放器） | `.xgplayer:not(.ad-player)` | `.xgplayer-danmu`、`.danmu_handler_box`（彈幕）；**同 class 的廣告播放器 `.ad-player` 會蓋住正片**：沒在播（無 `.xgplayer-playing`）就隱藏，播放中放正片上層 |
+| tw.juqing.app（Video.js） | `.video-js` | `vjs-fluid` 靠 `padding-top` 撐 16:9，劇場模式要清掉 padding；影片在最上層頁面（非 iframe）；失焦不會暫停，不需處理 |
 
 **新增一個站的 🎬 支援**：用除錯埠 + `cdp_eval.py` 找出該站的 `video` 祖先鏈與要隱藏的頂部/側邊元素，照上表模式加 CSS 規則 + 更新 `hasPlayer()`。
 

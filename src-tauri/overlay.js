@@ -150,6 +150,11 @@
       "html.ytf-cinema .ad-player.xgplayer-playing{z-index:2147483601 !important;}",
       "html.ytf-cinema .ad-player:not(.xgplayer-playing){display:none !important;}",
       "html.ytf-cinema .xgplayer-danmu,html.ytf-cinema .danmu_handler_box{display:none !important;}",
+      // Video.js 播放器（tw.juqing.app 等）；vjs-fluid 靠 padding-top 撐出 16:9，要清掉
+      "html.ytf-cinema .video-js{position:fixed !important;inset:0 !important;",
+      "width:100vw !important;height:100vh !important;padding:0 !important;max-width:none !important;",
+      "z-index:2147483600 !important;background:#000 !important;margin:0 !important;}",
+      "html.ytf-cinema .video-js video.vjs-tech{object-fit:contain !important;}",
       // 📑 書籤清單
       "#ytf-bm{position:fixed;top:" + (BAR_H + 2) + "px;right:6px;z-index:2147483647;display:none;",
       "width:260px;max-width:calc(100vw - 12px);max-height:calc(100vh - " + (BAR_H + 10) + "px);overflow-y:auto;",
@@ -261,6 +266,7 @@
     var svcNF = navBtn("NF", "https://www.netflix.com", "#b1060f");
     var svcBI = navBtn("B", "https://www.bilibili.com", "#00a1d6");
     var svcIY = navBtn("IY", "https://mview.iyf.tv", "#ff6a00");
+    var svcJQ = navBtn("JQ", "https://tw.juqing.app", "#7b3fe4");
 
     // 🎬 只看影片：CSS 劇場模式，隱藏頁面其餘部分、播放器填滿視窗（不換頁，無嵌入限制）
     var cinema = document.createElement("button");
@@ -269,7 +275,7 @@
     cinema.title = "只看影片（隱藏其餘介面，播放器填滿視窗）";
     function hasPlayer() {
       return !!document.querySelector(
-        "#movie_player, .html5-video-player, .bpx-player-container, .xgplayer, video"
+        "#movie_player, .html5-video-player, .bpx-player-container, .xgplayer, .video-js, video"
       );
     }
     function setCinema(on) {
@@ -410,6 +416,7 @@
     bar.appendChild(svcNF);
     bar.appendChild(svcBI);
     bar.appendChild(svcIY);
+    bar.appendChild(svcJQ);
     bar.appendChild(cinema);
     bar.appendChild(star);
     bar.appendChild(bmBtn);
