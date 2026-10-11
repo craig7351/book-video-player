@@ -47,6 +47,33 @@ fn save_bookmarks(app: tauri::AppHandle, data: String) -> Result<(), String> {
     std::fs::write(p, data).map_err(|e| e.to_string())
 }
 
+// 上次關閉時的網址：存成 app 資料夾下的 last_url.txt，下次啟動自動打開
+fn last_url_path<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> Option<std::path::PathBuf> {
+    app.path().app_data_dir().ok().map(|d| d.join("last_url.txt"))
+}
+
+fn load_last_url<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> Option<tauri::Url> {
+    let s = std::fs::read_to_string(last_url_path(app)?).ok()?;
+    let u: tauri::Url = s.trim().parse().ok()?;
+    matches!(u.scheme(), "http" | "https").then_some(u)
+}
+
+fn save_last_url<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
+    let Some(win) = app.get_webview_window("main") else { return };
+    let Ok(url) = win.url() else { return };
+    if !matches!(url.scheme(), "http" | "https") {
+        return;
+    }
+    let Some(p) = last_url_path(app) else { return };
+    if std::fs::read_to_string(&p).map(|s| s.trim() == url.as_str()).unwrap_or(false) {
+        return; // 沒變就不寫
+    }
+    if let Some(dir) = p.parent() {
+        let _ = std::fs::create_dir_all(dir);
+    }
+    let _ = std::fs::write(p, url.as_str());
+}
+
 fn main() {
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![load_bookmarks, save_bookmarks])
@@ -60,11 +87,8 @@ fn main() {
                 .build(),
         )
         .setup(|app| {
-            let win = WebviewWindowBuilder::new(
-                app,
-                "main",
-                WebviewUrl::External(START_URL.parse().unwrap()),
-            )
+            let start_url = load_last_url(app.handle()).unwrap_or_else(|| START_URL.parse().unwrap());
+            let win = WebviewWindowBuilder::new(app, "main", WebviewUrl::External(start_url))
             .title("YT Float")
             .decorations(false)
             .always_on_top(true)
@@ -94,7 +118,10 @@ fn main() {
                 .tooltip("YT Float")
                 .menu(&menu)
                 .on_menu_event(|app, event| match event.id.as_ref() {
-                    "quit" => app.exit(0),
+                    "quit" => {
+                        save_last_url(app);
+                        app.exit(0)
+                    }
                     "show" => {
                         if let Some(w) = app.get_webview_window("main") {
                             let _ = w.show();
@@ -104,6 +131,16 @@ fn main() {
                     _ => {}
                 })
                 .build(app)?;
+
+            // 每 3 秒記一次目前網址（單頁式網站切換影片不會觸發換頁事件，所以用輪詢；
+            // 這樣即使被工作管理員結束也只會少最後幾秒）
+            {
+                let handle = app.handle().clone();
+                std::thread::spawn(move || loop {
+                    std::thread::sleep(std::time::Duration::from_secs(3));
+                    save_last_url(&handle);
+                });
+            }
 
             // 註冊老闆鍵 Ctrl+Shift+Z（全域）
             {

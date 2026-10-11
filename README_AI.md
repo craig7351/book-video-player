@@ -147,4 +147,4 @@ PYTHONIOENCODING=utf-8 python cdp_eval.py "JSON.stringify({url:location.href, ba
 
 ## 目前狀態
 
-YouTube / Bilibili / Netflix / iyf.tv 皆驗證可用（開影片、🎬、新分頁攔截、DRM 播放）。工具列另有 ⭐ 書籤、📑 書籤清單、➖ 縮小到工作列、IY 捷徑。已產出 release exe。後續可能的擴充：記住上次視窗位置/大小、開機自啟、透明度調整、更多服務捷徑。
+YouTube / Bilibili / Netflix / iyf.tv 皆驗證可用（開影片、🎬、新分頁攔截、DRM 播放）。工具列另有 ⭐ 書籤、📑 書籤清單、➖ 縮小到工作列、IY / JQ 捷徑。啟動時會開啟上次關閉的網址（Rust 端每 3 秒輪詢 `win.url()`，寫入 app 資料夾 `last_url.txt`；不走 JS invoke，免 ACL 授權）。已產出 release exe。後續可能的擴充：記住上次視窗位置/大小、開機自啟、透明度調整、更多服務捷徑。
